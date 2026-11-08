@@ -98,10 +98,25 @@ browsing, same-origin localStorage isolation, page reuse across independent CLI
 rounds, the overview/detail UI, and human takeover/return. Private deployment
 addresses, credentials and customer artifacts are intentionally absent here.
 
-This extracted package has a different local launcher and optional supervisor
-adapter. Its own remote validation receipt will be recorded before the PR is
-presented as ready; originating-environment results do not prove the extraction.
-No local product tests or development CI were run for this contribution.
+The extracted package at `10dfd2d4a5524f32a47fe77cf3cb9b148cbf2d9d`
+was downloaded from the public fork into a separate remote desktop profile.
+All 12 package files were checked against their SHA-256 values before launch.
+The unprivileged launcher became ready; real Example/IANA browsing, same-origin
+localStorage isolation, and reuse of the same page targets across independent
+CLI rounds passed. The visible overview and entry into an existing Agent page
+were also observed. These runs reused verified SDK/Electron dependencies already
+present on that remote desktop; a fresh dependency installation is not claimed.
+
+The first receipt attempted to read `Page.targetId`, which is not part of this
+pinned SDK's Page surface. That failure was retained. The next run used the
+documented `tabs()` inventory to inspect the existing pages and site data across
+two CLI processes, without replaying their setup writes.
+
+Extracted UI takeover/return, restart restoration and the optional supervisor
+adapter are not yet signed off. Desktop transport interruptions prevented those
+checks from completing; the originating implementation's results do not fill
+these gaps. No local product tests or development CI were run for this
+contribution.
 
 Native Wayland, ARM64, broad distribution compatibility, the native Ego browser
 E2E suite, proprietary snapshots and native-profile import remain unverified or
