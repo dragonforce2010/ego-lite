@@ -30,6 +30,10 @@ npm start
 Electron is pinned to 45.2.3. The SDK preparation command verifies the original
 v2.2.0 ZIP's SHA-256 before extraction and refuses to overwrite an existing SDK.
 It records the source and adapted bundle digests. There is no runtime download.
+Build systems that download or cache dependencies separately may run
+`python3 prepare-sdk.py --archive /absolute/path/ego-browser-v2.2.0.zip`.
+This offline path enforces the same archive size limit, pinned SHA-256,
+safe extraction and guarded SDK adaptations as the direct download path.
 
 The SDK bundle receives two guarded adapters: use the Electron host's random
 instance identity for the cross-round page ledger, and use the host's serialized

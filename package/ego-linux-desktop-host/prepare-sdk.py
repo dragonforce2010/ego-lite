@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Prepare a verified, pinned SDK for the opt-in reference host."""
+import argparse
 import hashlib
 from pathlib import Path
 import stat
@@ -13,6 +14,10 @@ SDK_SHA256 = 'a81348305c4edc3f9cdda8c4408b98b7ce740365b8f4efc9931dd0e7f5555eba'
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--archive', type=Path,
+                        help='Use a pre-downloaded SDK ZIP; the pinned digest is still required')
+    args = parser.parse_args()
     target = ROOT / 'sdk'
     if target.exists() or target.is_symlink():
         raise RuntimeError('SDK directory already exists; use a fresh checkout')
@@ -20,7 +25,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix='.sdk-', dir=ROOT) as temporary:
         stage = Path(temporary)
         archive = stage / 'sdk.zip'
-        with urllib.request.urlopen(SDK_URL, timeout=60) as response, archive.open('xb') as output:
+        # Build systems may own authenticated caching and bounded download retries.
+        # Both paths use the same size, digest, extraction and adaptation checks.
+        with (args.archive.open('rb') if args.archive else
+              urllib.request.urlopen(SDK_URL, timeout=60)) as response, archive.open('xb') as output:
             digest = hashlib.sha256()
             total = 0
             while chunk := response.read(65536):
