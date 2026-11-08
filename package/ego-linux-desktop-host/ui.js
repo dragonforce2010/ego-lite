@@ -16,7 +16,7 @@ function activity(space, state) {
   if (state.desktopHuman) return space.id === state.activeSpaceId ? 'human' : 'paused';
   if (space.running) return 'running';
   if (['completed','awaiting_user'].includes(space.taskStatus)) return space.taskStatus;
-  return space.ownership === 'user' ? 'manual' : 'idle';
+  return space.ownership === 'user' ? (space.createdBy === 'agent' ? 'human' : 'manual') : 'idle';
 }
 function renderOverview(state, selected) {
   document.body.classList.toggle('overview-open',state.overviewOpen);
