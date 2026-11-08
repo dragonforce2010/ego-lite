@@ -79,9 +79,16 @@ captured only while the overview is open and remain in memory.
   package's pinned dependency. No browser process is launched as root.
 - `EGO_LINUX_CONTROL_FILE`: optional private regular file supplied by a desktop
   supervisor. It contains `ready`, `boot_id` and `control_mode` (`agent` or `human`);
-  `boot_id` must match the `bootId` in the private runtime metadata returned by
-  `python3 start-browser.py --prepare`. Missing, unsafe or mismatched configured
-  state blocks automation. Without this option, per-space ownership is enforced.
+  the launcher reads that supervisor's `boot_id` and binds the runtime to it.
+  The profile stays stable across desktop boots while the private socket runtime
+  changes with the boot identity. Refresh the file atomically at least every two
+  seconds. Missing, unsafe, over-five-second-old or mismatched configured state
+  blocks automation. Without this option, per-space ownership is enforced.
+
+Version 0.2.3 clears the waiting-for-takeover status on an explicit return,
+preserves each space's original creator across a restart, and keeps restored
+page URLs while their first navigation is still loading. A normal window close
+or SIGTERM writes the space state and flushes site storage before quitting.
 
 The Unix socket and runtime/profile directories are private to the current Unix
 user. Scripts running as that user are trusted; spaces do not isolate untrusted

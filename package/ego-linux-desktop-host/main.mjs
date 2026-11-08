@@ -27,6 +27,8 @@ let desktopHuman = false;
 let overviewOpen = false;
 let capturingPreviews = false;
 let stateReady = false;
+let quitReady = false;
+let shutdown;
 let clipboardTransaction;
 const spaces = new Map();
 const targets = new Map();
@@ -39,7 +41,9 @@ function writeState() {
   if (!stateReady) return;
   const state = [...spaces.values()].map(space => ({ id: space.id, name: space.name, createdBy: space.createdBy, ownership: space.ownership, taskStatus: space.taskStatus,
     activeIndex: [...space.pages.keys()].indexOf(space.activeTarget), urls: [...space.pages.values()].map(page => {
-      const url = page.view.webContents.getURL();
+      // Keep a restored URL while Chromium is still loading its first document.
+      // Reading getURL() here can otherwise replace it with about:blank.
+      const url = page.savedUrl;
       try { const saved = new URL(url); for (const key of [...saved.searchParams.keys()]) if (/token|secret|password|authorization|^code$/i.test(key)) saved.searchParams.delete(key); saved.hash=''; return saved.href; } catch { return 'about:blank'; }
     }) }));
   const temp = `${stateFile}.${process.pid}.tmp`;
@@ -48,7 +52,7 @@ function writeState() {
 }
 
 function uiState() {
-  return { activeSpaceId, desktopHuman, overviewOpen, version: '0.2.2', sdkVersion: '2.2.0', spaces: [...spaces.values()].map(space => ({
+  return { activeSpaceId, desktopHuman, overviewOpen, version: '0.2.3', sdkVersion: '2.2.0', spaces: [...spaces.values()].map(space => ({
     id: space.id, name: space.name, ownership: space.ownership, activeTabId: space.activeTarget,
     running: !desktopHuman && space.ownership === 'agent' && [...clients].some(client => client.spaceId === space.id),
     taskStatus: space.taskStatus, action: space.action || '',
@@ -121,7 +125,7 @@ async function desktopState() {
   let state;
   try {
     const info = fs.lstatSync(config.controlFile);
-    if (info.isSymbolicLink() || !info.isFile() || info.uid !== process.getuid() || info.mode & 0o077 || info.size > 8192) throw Error('Unsafe control state');
+    if (info.isSymbolicLink() || !info.isFile() || info.uid !== process.getuid() || info.mode & 0o077 || info.size > 8192 || Math.abs(Date.now() - info.mtimeMs) > 5000) throw Error('Unsafe or stale control state');
     state = JSON.parse(fs.readFileSync(config.controlFile, 'utf8'));
   } catch {
     desktopHuman = true;
@@ -184,7 +188,7 @@ async function newPage(space, input = 'about:blank', focus = true) {
   window.contentView.addChildView(view);
   view.webContents.debugger.attach('1.3');
   const { targetInfo } = await view.webContents.debugger.sendCommand('Target.getTargetInfo');
-  const page = { view, targetId: targetInfo.targetId, space, childTargets: new Map(), error: null };
+  const page = { view, targetId: targetInfo.targetId, space, savedUrl: url, childTargets: new Map(), error: null };
   space.pages.set(page.targetId, page); targets.set(page.targetId, page);
   view.webContents.debugger.on('message', (_event, method, params, sessionId) => {
     if (method === 'Target.attachedToTarget') page.childTargets.set(params.sessionId, { targetInfo: params.targetInfo });
@@ -195,8 +199,8 @@ async function newPage(space, input = 'about:blank', focus = true) {
   });
   view.webContents.on('page-title-updated', update);
   view.webContents.on('did-start-navigation', (_event, _url, _inPlace, main) => { if (main) { page.error=null; update(); } });
-  view.webContents.on('did-navigate', () => { update(); writeState(); });
-  view.webContents.on('did-navigate-in-page', () => { update(); writeState(); });
+  view.webContents.on('did-navigate', (_event, destination) => { page.savedUrl=destination; update(); writeState(); });
+  view.webContents.on('did-navigate-in-page', (_event, destination, main) => { if(main)page.savedUrl=destination; update(); writeState(); });
   view.webContents.on('did-fail-load', (_event, code, description, _url, main) => { if (main && code !== -3) { page.error=description; update(); } });
   view.webContents.on('will-navigate', (event, destination) => { try { validUrl(destination); } catch { event.preventDefault(); } });
   view.webContents.setWindowOpenHandler(({ url: destination }) => {
@@ -278,7 +282,7 @@ async function cdp(client, space, packet) {
       if (params.browserContextId) throw failure('External browser contexts are unavailable', 'EGO_INVALID_ARGUMENT');
       result={targetId:(await newPage(space, params.url ?? 'about:blank')).targetId};
     } else if (method === 'Target.setDiscoverTargets') result={};
-    else if (method === 'Browser.getVersion') result={protocolVersion:'1.3',product:`Chrome/${process.versions.chrome}`,revision:'ego-linux-desktop-host-0.2.2',userAgent:pageFor(space).view.webContents.getUserAgent(),jsVersion:process.versions.v8};
+    else if (method === 'Browser.getVersion') result={protocolVersion:'1.3',product:`Chrome/${process.versions.chrome}`,revision:'ego-linux-desktop-host-0.2.3',userAgent:pageFor(space).view.webContents.getUserAgent(),jsVersion:process.versions.v8};
     else if (method.startsWith('Browser.') || (method.startsWith('Target.') && !['Target.setAutoAttach','Target.autoAttachRelated'].includes(method))) throw failure('Browser-wide operation is outside this task space', 'EGO_INVALID_ARGUMENT');
     else if (method.startsWith('egoAutomated.')) result={}; // stock Chromium has no custom Ego engine domain
     else {
@@ -306,7 +310,7 @@ async function rpc(client, request) {
   const args=request.args??[];
   const space=spaces.get(request.spaceId);
   if (space && client.spaceId !== space.id) { client.spaceId=space.id; update(); }
-  if (request.method === 'getBrowserVersion') return {currentVersion:'0.2.2',updateAvailable:false,host:'Linux SDK-compatible reference host',sdkVersion:'2.2.0',browserInstanceId};
+  if (request.method === 'getBrowserVersion') return {currentVersion:'0.2.3',updateAvailable:false,host:'Linux SDK-compatible reference host',sdkVersion:'2.2.0',browserInstanceId};
   if (request.method === 'listProfiles') return {profiles:[{id:'Default',name:'Linux session',isDefault:true}]};
   if (request.method === 'listTaskSpaces') return {taskSpaces:[...spaces.values()].map(descriptor)};
   if (request.method === 'createTaskSpace') {
@@ -315,10 +319,10 @@ async function rpc(client, request) {
     const created=await newSpace(args[0]);client.spaceId=created.id;await newPage(created);writeState();return descriptor(created);
   }
   if (request.method === 'claimTaskSpace') {
-    const claimed=spaces.get(args[0]);await guard(claimed,true);claimed.ownership='agent';if(args[1])claimed.name=String(args[1]).slice(0,160);select(claimed);writeState();return descriptor(claimed);
+    const claimed=spaces.get(args[0]);await guard(claimed,true);claimed.ownership='agent';claimed.taskStatus='idle';if(args[1])claimed.name=String(args[1]).slice(0,160);select(claimed);writeState();return descriptor(claimed);
   }
   if (request.method === 'cdp') return cdp(client,space,args[0]);
-  if (request.method === 'takeOverTaskSpace') { await guard(space,true);space.ownership='agent';update();writeState();return descriptor(space); }
+  if (request.method === 'takeOverTaskSpace') { await guard(space,true);space.ownership='agent';space.taskStatus='idle';update();writeState();return descriptor(space); }
   await guard(space);
   if (request.method === 'createTab') { const page=await newPage(space,args[0]);writeState();return {targetId:page.targetId}; }
   if (request.method === 'listTabs') return {tabs:[...space.pages.values()].map((p,index)=>({index,targetId:p.targetId,title:p.view.webContents.getTitle(),url:p.view.webContents.getURL(),active:p.targetId===space.activeTarget}))};
@@ -386,7 +390,7 @@ async function ui(request) {
   else if(request.action==='new-space'){overviewOpen=false;const created=await newSpace(String(request.value), 'user');await newPage(created);}
   else if(request.action==='new-tab'){if(space)await newPage(space);}
   else if(request.action==='close-tab'){if(space)closePage(pageFor(space,request.value));}
-  else if(request.action==='control'){if(!desktopHuman&&space)space.ownership=space.ownership==='user'?'agent':'user';}
+  else if(request.action==='control'){if(!desktopHuman&&space){space.ownership=space.ownership==='user'?'agent':'user';space.taskStatus=space.ownership==='agent'?'idle':'manual';}}
   else if(request.action==='navigate'){
     let destination=String(request.value??'').trim();if(!/^[a-z]+:/i.test(destination))destination='https://'+destination;
     destination=validUrl(destination);if(page)void page.view.webContents.loadURL(destination).catch(()=>{});else if(space)await newPage(space,destination);
@@ -407,7 +411,26 @@ async function start() {
     if(event.sender!==window.webContents||event.senderFrame.url!==new URL('./index.html',import.meta.url).href)throw Error('Untrusted UI sender');
     return ui(request);
   });
-  window.on('resize',layout);window.on('closed',()=>app.quit());
+  const quit = event => {
+    if (quitReady) return;
+    event?.preventDefault();
+    if (shutdown) return;
+    shutdown = (async () => {
+      writeState();
+      const sessions = [...new Set([...spaces.values()].map(space => space.session))];
+      for (const current of sessions) current.flushStorageData();
+      await Promise.all(sessions.map(current => current.cookies.flushStore()));
+    })().catch(error => console.error('[ego-linux-host] State flush failed:', String(error.message).slice(0, 200))).finally(() => {
+      server?.close();
+      for (const client of clients) client.socket.destroy();
+      try { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); } catch {}
+      quitReady = true;
+      app.quit();
+    });
+  };
+  window.on('resize',layout);window.on('close',quit);window.on('closed',()=>app.quit());
+  app.on('before-quit',quit);
+  process.once('SIGTERM',()=>quit());
   await window.loadFile(path.join(root,'index.html'));
   let saved;
   try{const info=fs.lstatSync(stateFile);if(!info.isSymbolicLink()&&info.uid===process.getuid())saved=JSON.parse(fs.readFileSync(stateFile,'utf8'));}catch{}
@@ -415,6 +438,7 @@ async function start() {
     nextSpace=saved.nextSpace||1;
     for(const item of (saved.spaces??[]).slice(0,16)){
       const space=await newSpace(item.name,item.ownership,item.id);
+      if(['agent','user'].includes(item.createdBy))space.createdBy=item.createdBy;
       if(['idle','manual','awaiting_user','completed'].includes(item.taskStatus))space.taskStatus=item.taskStatus;
       for(const url of (item.urls??[]).slice(0,20)){try{await newPage(space,url,false);}catch{}}
       space.activeTarget=[...space.pages.keys()][item.activeIndex]??space.pages.keys().next().value;
@@ -430,7 +454,6 @@ async function start() {
   const timer=setInterval(()=>{const before=desktopHuman;void desktopState().then(()=>{if(before!==desktopHuman)update();},error=>{if(error.message.startsWith('Desktop boot has changed'))app.quit();});},500);timer.unref();
   const previews=setInterval(()=>void capturePreviews(),2000);previews.unref();
   app.on('second-instance',(_event,argv)=>{window.show();window.focus();const url=argv.find(value=>/^https?:\/\//.test(value));const space=spaces.get(activeSpaceId);if(url&&space)void newPage(space,url).catch(()=>{});});
-  app.on('before-quit',()=>{server?.close();for(const client of clients)client.socket.destroy();try{if(fs.existsSync(socketPath))fs.unlinkSync(socketPath);}catch{}});
 }
 
 // Electron waits for the ESM entry point to settle before emitting ready.

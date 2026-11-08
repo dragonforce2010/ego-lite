@@ -13,7 +13,7 @@ if(argv[0]==='skill'){
   process.exit(0);
 }
 if(argv[0]==='--version'){
-  process.stdout.write('ego-browser Linux reference host 0.2.2; upstream SDK 2.2.0\n');process.exit(0);
+  process.stdout.write('ego-browser Linux reference host 0.2.3; upstream SDK 2.2.0\n');process.exit(0);
 }
 const inline=argv.length===3&&['-e','--eval'].includes(argv[1]);
 if(argv[0]!=='nodejs'||(argv.length!==1&&!inline)){

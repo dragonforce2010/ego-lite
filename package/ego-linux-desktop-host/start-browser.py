@@ -113,17 +113,30 @@ def main():
     if not workspace.is_dir() or workspace.stat().st_uid != os.getuid():
         raise RuntimeError('Workspace must be an existing directory owned by this user')
     identity = hashlib.sha256((str(os.getuid()) + ':' + str(user_data)).encode()).hexdigest()[:20]
+    boot_id = identity
+    control = None
+    if os.environ.get('EGO_LINUX_CONTROL_FILE'):
+        control = Path(os.environ['EGO_LINUX_CONTROL_FILE'])
+        if not control.is_absolute():
+            raise RuntimeError('EGO_LINUX_CONTROL_FILE must be absolute')
+        info = control.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 8192 or abs(time.time() - info.st_mtime) > 5:
+            raise RuntimeError('Unsafe desktop supervisor state')
+        state = json.loads(control.read_text())
+        if not state.get('ready') or state.get('control_mode') not in ('agent', 'human'):
+            raise RuntimeError('Desktop supervisor is not ready')
+        boot_id = state.get('boot_id')
+        if not isinstance(boot_id, str) or not boot_id or len(boot_id) > 128 or any(ord(c) < 32 for c in boot_id):
+            raise RuntimeError('Invalid desktop supervisor boot identity')
+        identity = hashlib.sha256((identity + ':' + boot_id).encode()).hexdigest()[:20]
     runtime = private(Path('/tmp') / ('ego-linux-' + identity))
-    config = {'bootId': identity, 'userData': str(user_data),
+    config = {'bootId': boot_id, 'userData': str(user_data),
               'workspace': str(workspace.resolve()),
               'downloads': str(private(user_data / 'Downloads')),
               'socketPath': str(runtime / 'bridge.sock'),
               'stateDir': str(private(user_data / 'sdk-state')),
               'outputDir': str(private(user_data / 'output'))}
-    if os.environ.get('EGO_LINUX_CONTROL_FILE'):
-        control = Path(os.environ['EGO_LINUX_CONTROL_FILE'])
-        if not control.is_absolute():
-            raise RuntimeError('EGO_LINUX_CONTROL_FILE must be absolute')
+    if control:
         config['controlFile'] = str(control)
     allowed = ('PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'DISPLAY', 'WAYLAND_DISPLAY',
                'XAUTHORITY', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',

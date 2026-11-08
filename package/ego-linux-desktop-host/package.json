@@ -1,6 +1,6 @@
 {
   "name": "ego-linux-desktop-host",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Opt-in Linux reference host for the ego-browser SDK with a visible isolated Spaces UI",
   "license": "MIT",
