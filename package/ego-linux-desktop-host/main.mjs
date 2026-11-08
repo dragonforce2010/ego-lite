@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { captureSnapshot } from './snapshot.mjs';
+import { createPermissionPrompts } from './permission-prompts.mjs';
 
 process.umask(0o077);
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,9 @@ const clients = new Set();
 const stateFile = path.join(config.userData, 'spaces.json');
 const socketPath = path.join(runtime, 'bridge.sock');
 const failure = (message, code = 'EGO_OPERATION_FAILED') => Object.assign(new Error(message), { error_code: code });
+const permissionPrompts = createPermissionPrompts(({ permission, origin, signal }) =>
+  dialog.showMessageBox(window, { type: 'question', buttons: ['拒绝 / Deny', '允许 / Allow'], defaultId: 0, cancelId: 0,
+    message: `网站权限 / Site permission: ${permission}`, detail: origin, signal }).then(result => result.response === 1));
 
 function writeState() {
   if (!stateReady) return;
@@ -160,11 +164,7 @@ function emit(page, method, params, childSession) {
 
 function configureSession(ses, space) {
   ses.setPermissionRequestHandler((contents, permission, callback, details) => {
-    space.ownership = 'user'; update(); writeState();
-    let origin = '';
-    try { origin = new URL(details.requestingUrl || contents.getURL()).origin; } catch {}
-    dialog.showMessageBox(window, { type: 'question', buttons: ['拒绝 / Deny', '允许 / Allow'], defaultId: 0, cancelId: 0,
-      message: `网站权限 / Site permission: ${permission}`, detail: origin }).then(result => callback(result.response === 1), () => callback(false));
+    permissionPrompts.request(contents, permission, callback, details);
   });
   ses.on('will-download', (_event, item, contents) => {
     const page = [...space.pages.values()].find(p => p.view.webContents === contents);
@@ -189,6 +189,16 @@ async function newPage(space, input = 'about:blank', focus = true) {
   view.webContents.debugger.attach('1.3');
   const { targetInfo } = await view.webContents.debugger.sendCommand('Target.getTargetInfo');
   const page = { view, targetId: targetInfo.targetId, space, savedUrl: url, childTargets: new Map(), error: null };
+  permissionPrompts.track(view.webContents, () => {
+    if (space.ownership === 'user') return;
+    const previousOwnership = space.ownership;
+    space.ownership = 'user';
+    try { update(); writeState(); } catch (error) {
+      space.ownership = previousOwnership;
+      try { update(); } catch {}
+      throw error;
+    }
+  });
   space.pages.set(page.targetId, page); targets.set(page.targetId, page);
   view.webContents.debugger.on('message', (_event, method, params, sessionId) => {
     if (method === 'Target.attachedToTarget') page.childTargets.set(params.sessionId, { targetInfo: params.targetInfo });
@@ -230,6 +240,7 @@ async function newSpace(name, ownership = 'agent', id) {
 }
 
 function closePage(page) {
+  permissionPrompts.forget(page.view.webContents);
   window.contentView.removeChildView(page.view);
   page.space.pages.delete(page.targetId);targets.delete(page.targetId);
   page.view.webContents.close();
