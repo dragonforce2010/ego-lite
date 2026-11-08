@@ -1,0 +1,22 @@
+{
+  "name": "ego-linux-desktop-host",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Opt-in Linux reference host for the ego-browser SDK with a visible isolated Spaces UI",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.mjs",
+  "bin": {
+    "ego-browser-linux": "cli.mjs"
+  },
+  "scripts": {
+    "prepare:sdk": "python3 prepare-sdk.py",
+    "start": "python3 start-browser.py"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "electron": "45.2.3"
+  }
+}

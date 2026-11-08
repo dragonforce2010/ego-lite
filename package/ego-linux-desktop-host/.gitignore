@@ -1,0 +1,4 @@
+node_modules/
+sdk/
+*.zip
+__pycache__/

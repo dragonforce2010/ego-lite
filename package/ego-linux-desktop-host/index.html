@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+<title>Ego Browser Linux</title><link rel="stylesheet" href="ui.css"></head>
+<body><header><div class="brand"><span class="mark">e</span><strong>Ego Browser</strong><span class="badge">Linux</span></div>
+<div class="controls"><span id="status"></span><button id="control"></button><button id="language" title="Language / 语言">EN</button><button id="spaces-toggle" aria-label="查看所有空间 / Show all spaces" aria-expanded="false" title="空间总览 / All spaces">1</button></div></header>
+<aside><div class="section"><span id="spaces-title">任务空间</span><button id="new-space" title="新建空间 / New space">＋</button></div><div id="spaces"></div>
+<div class="footnote" id="compatibility">SDK 兼容版 · 独立 Linux 实现</div></aside>
+<main><div id="space-detail"><strong id="space-name"></strong><span id="space-state"></span><span id="space-action"></span></div><div class="tabs"><div id="tabs"></div><button id="new-tab" title="新建标签页 / New tab">＋</button></div>
+<form id="address-form"><button type="button" id="back" title="后退 / Back">‹</button><button type="button" id="forward" title="前进 / Forward">›</button><button type="button" id="reload" title="刷新 / Reload">↻</button><span id="security">●</span><input id="address" aria-label="网址 / Address" autocomplete="off" spellcheck="false"><button type="submit">↵</button></form>
+<div id="notice"></div><div id="welcome"><span class="large-mark">e</span><h1>Ego Browser Linux</h1><p id="welcome-text">独立任务空间，同一沙箱桌面。</p><p id="welcome-help">输入网址开始浏览，或让智能体使用 ego-browser 操作。</p></div></main>
+<section id="overview" hidden aria-label="所有任务空间 / All task spaces"><div class="overview-heading"><div><h1 id="overview-title"></h1><p id="overview-help"></p></div><button id="overview-back"></button></div><div id="space-grid"></div></section>
+<script src="ui.js"></script></body></html>
