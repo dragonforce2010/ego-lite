@@ -8,7 +8,8 @@ export function pageSnapshotLocatorCase() {
       region.innerHTML =
         '<a href="/nav-target?locator=duplicate">First duplicate</a>' +
         '<a href="/nav-target?locator=duplicate">Second duplicate</a>' +
-        '<a href="/nav-target?locator=unique">Unique destination</a>';
+        '<a href="/nav-target?locator=unique">Unique destination</a>' +
+        '<input aria-label="Main frame ref regression">';
       document.body.append(region);
     });
 
@@ -30,6 +31,17 @@ export function pageSnapshotLocatorCase() {
       state: "attached",
       timeout: 2_000,
     });
+
+    const mainFrameRef = snapshot.split("\\n")
+      .find((line) => line.includes("Main frame ref regression"))
+      ?.match(/\\[ref=([^\\]]+)\\]/)?.[1];
+    assert(mainFrameRef, "main-frame textbox has a snapshot ref");
+    await page.fill("@" + mainFrameRef, "main frame reference works");
+    assertEqual(
+      await page.evaluate(() => document.querySelector('[aria-label="Main frame ref regression"]').value),
+      "main frame reference works",
+      "snapshot ref resolves to the main-frame textbox"
+    );
 
     await page.close();
   `;
