@@ -103,6 +103,12 @@ No raw CDP listener, HTTP control port or public WebSocket is opened.
 
 ## Validation status and limits
 
+The Linux-only `frame-targets.e2e.mjs` fixture exercises real main-frame,
+same-origin and out-of-process iframe refs, owned target attach/detach, foreign
+space rejection without form changes, and a second CLI client's reconnect.
+Run it against an isolated desktop with `ego-browser-linux nodejs < frame-targets.e2e.mjs`.
+It creates and closes only its two task spaces and loopback fixture servers.
+
 The originating Linux desktop implementation has been exercised in an isolated
 remote acceptance environment with SDK v2.2.0 and Electron 45.2.3: real two-space
 browsing, same-origin localStorage isolation, page reuse across independent CLI
