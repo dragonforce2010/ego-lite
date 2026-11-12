@@ -94,7 +94,14 @@ export async function captureSnapshot(page, options = {}, ensureControl = async 
         if (length + text.length > limit) { truncated = true; return; }
         lines.push(text);
         length += text.length + 1;
-        if (nativeRef) refs.push({ refId: nativeRef, backendNodeId, role, name, frameId: frame.id, frameProvenance: frame.id === tree.frameTree.frame.id ? 'page' : 'frame' });
+        if (nativeRef) {
+          // The SDK treats frameId as an embedded-frame scope, even when
+          // frameProvenance is page. Top-level refs must remain unscoped.
+          const owner = frame.id === tree.frameTree.frame.id
+            ? { frameProvenance: 'page' }
+            : { frameId: frame.id, frameProvenance: 'frame' };
+          refs.push({ refId: nativeRef, backendNodeId, role, name, ...owner });
+        }
         nextDepth = depth + 1;
       }
       for (const id of node.childIds ?? []) walk(byId.get(id), nextDepth);
