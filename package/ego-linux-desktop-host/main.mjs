@@ -255,6 +255,16 @@ function pageFor(space, targetId) {
   return page;
 }
 
+function childTargetFor(space, targetId, sessionId) {
+  for (const page of space.pages.values()) {
+    for (const [nativeSession, child] of page.childTargets) {
+      if ((targetId && child.targetInfo?.targetId === targetId) || (sessionId && nativeSession === sessionId)) {
+        return { page, nativeSession, targetInfo: child.targetInfo };
+      }
+    }
+  }
+}
+
 async function cdp(client, space, packet) {
   await guard(space);
   const { id, method, params = {}, sessionId } = packet;
@@ -271,19 +281,37 @@ async function cdp(client, space, packet) {
     }
     let result;
     if (method === 'Target.getTargets') {
-      result = { targetInfos: [...space.pages.values()].map(p => ({ targetId: p.targetId, type: 'page', title: p.view.webContents.getTitle(), url: p.view.webContents.getURL(), attached: true })) };
+      result = { targetInfos: [...space.pages.values()].flatMap(p => [
+        { targetId: p.targetId, type: 'page', title: p.view.webContents.getTitle(), url: p.view.webContents.getURL(), attached: true },
+        ...[...p.childTargets.values()].filter(child => child.targetInfo?.type === 'iframe').map(child => ({ ...child.targetInfo, attached: true })),
+      ]) };
     } else if (method === 'Target.getTargetInfo') {
-      const target = pageFor(space, params.targetId ?? page?.targetId);
-      result = { targetInfo: { targetId: target.targetId, type: 'page', title: target.view.webContents.getTitle(), url: target.view.webContents.getURL(), attached: true } };
+      const child = childTargetFor(space, params.targetId, params.targetId ? undefined : nativeSession);
+      if (child?.targetInfo?.type === 'iframe') result = { targetInfo: { ...child.targetInfo, attached: true } };
+      else {
+        const target = pageFor(space, params.targetId ?? page?.targetId);
+        result = { targetInfo: { targetId: target.targetId, type: 'page', title: target.view.webContents.getTitle(), url: target.view.webContents.getURL(), attached: true } };
+      }
     } else if (method === 'Target.attachToTarget') {
-      const target = pageFor(space, params.targetId);
-      let attached = client.roots.get(target.targetId);
-      if (!attached) { attached=`ego-linux-${randomUUID()}`;client.roots.set(target.targetId, attached); }
-      result={ sessionId: attached };
+      const child = childTargetFor(space, params.targetId);
+      if (child?.targetInfo?.type === 'iframe') {
+        if (!client.roots.has(child.page.targetId)) throw failure('Attach the owning Page first', 'EGO_WEB_CONTENTS_UNAVAILABLE');
+        result = { sessionId: child.nativeSession };
+      } else {
+        const target = pageFor(space, params.targetId);
+        let attached = client.roots.get(target.targetId);
+        if (!attached) { attached=`ego-linux-${randomUUID()}`;client.roots.set(target.targetId, attached); }
+        result={ sessionId: attached };
+      }
     } else if (method === 'Target.detachFromTarget') {
       const target = [...client.roots].find(([, value]) => value === params.sessionId)?.[0];
       if (target) client.roots.delete(target);
-      else { if (!page) throw failure('Unknown target session'); await page.view.webContents.debugger.sendCommand(method, params, nativeSession); }
+      // Native child sessions belong to the shared host debugger. A client
+      // detaches locally without destroying a session used by another client.
+      else {
+        const child = childTargetFor(space, undefined, params.sessionId);
+        if (!child || !client.roots.has(child.page.targetId)) throw failure('Unknown target session');
+      }
       result={};
     } else if (method === 'Target.activateTarget') {
       const target = pageFor(space, params.targetId);select(space, target);target.view.webContents.focus();result={};
